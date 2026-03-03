@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ValidaSerie BCB - Verificador CP9/2026</title>
+    <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            color: white;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 1.5rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+
+        .instruction-text {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            color: #1565c0;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .denomination-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            justify-content: center;
+        }
+
+        .denom-btn {
+            flex: 1;
+            padding: 12px;
+            border: 3px solid #e0e0e0;
+            background: white;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .denom-btn.active {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .camera-section {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            aspect-ratio: 4/3;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .camera-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(45deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+        }
+
+        .camera-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            opacity: 0.8;
+        }
+
+        .start-camera-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .scan-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: none;
+        }
+
+        .scan-grid {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(102, 126, 234, 0.3) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(102, 126, 234, 0.3) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+
+        .torch-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 10;
+            display: none;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+        }
+
+        .torch-btn.active {
+            background: #f1c40f;
+            border-color: #f39c12;
+            color: #333;
+            box-shadow: 0 0 20px rgba(241, 196, 15, 0.6);
+        }
+
+        .torch-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .capture-btn {
+            flex: 2;
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: none;
+        }
+
+        .stop-btn {
+            flex: 1;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 1rem;
+            cursor: pointer;
+            display: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-container {
+            margin-bottom: 15px;
+        }
+
+        .result-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 5px solid #bdc3c7;
+            transition: all 0.3s;
+        }
+
+        .result-item.invalid {
+            background: #fee;
+            border-left-color: #e74c3c;
+            animation: shake 0.5s;
+        }
+
+        .result-item.valid {
+            background: #efe;
+            border-left-color: #27ae60;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .result-number {
+            font-family: 'Courier New', monospace;
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #2c3e50;
+            letter-spacing: 1px;
+        }
+
+        .result-item.invalid .result-number {
+            color: #c0392b;
+            background: rgba(231, 76, 60, 0.1);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .status-invalid {
+            background: #e74c3c;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        .status-valid {
+            background: #27ae60;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .result-details {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+
+        .alert-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .alert-box {
+            background: #e74c3c;
+            color: white;
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            animation: popIn 0.3s;
+            border: 3px solid #c0392b;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            100% { transform: scale(1); }
+        }
+
+        .alert-icon {
+            font-size: 4rem;
+            margin-bottom: 15px;
+        }
+
+        .alert-box h2 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .alert-serial {
+            font-size: 2.5rem;
+            font-weight: bold;
+            font-family: monospace;
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            letter-spacing: 3px;
+            word-break: break-all;
+        }
+
+        .stats-bar {
+            background: #34495e;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-around;
+            font-size: 0.9rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .manual-input {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .manual-input label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 0.9rem;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .manual-input input {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-family: monospace;
+            text-align: center;
+            letter-spacing: 3px;
+        }
+
+        .manual-input button {
+            padding: 12px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        /* NUEVO LAYOUT: Dos columnas para rangos y apoyo */
+        .bottom-section {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+            align-items: stretch;
+        }
+
+        .ranges-column {
+            flex: 1;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 10px;
+            color: #856404;
+        }
+
+        .ranges-column h3 {
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            color: #856404;
+            text-align: center;
+        }
+
+        .range-list {
+            font-family: monospace;
+            font-size: 0.65rem;
+            line-height: 1.6;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .range-item {
+            padding: 1px 0;
+            border-bottom: 1px dotted #e0d5b3;
+        }
+
+        .support-column {
+            width: 140px;
+            background: #f8f9fa;
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .support-title {
+            font-size: 0.75rem;
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+
+        .support-column img {
+            width: 100%;
+            border-radius: 8px;
+            display: block;
+        }
+
+        .clear-btn {
+            width: 100%;
+            padding: 12px;
+            background: #95a5a6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .multiple-indicator {
+            background: #9b59b6;
+            color: white;
+            padding: 8px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            text-align: center;
+            margin-bottom: 10px;
+            display: none;
+        }
+
+        .footer-brand {
+            text-align: center;
+            font-size: 0.7rem;
+            color: #95a5a6;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+            }
+            .result-number {
+                font-size: 1.1rem;
+            }
+            .alert-serial {
+                font-size: 1.8rem;
+            }
+            h1 {
+                font-size: 1.3rem;
+            }
+            .bottom-section {
+                flex-direction: column;
+            }
+            .support-column {
+                width: 100%;
+                flex-direction: row;
+                gap: 15px;
+            }
+            .support-column img {
+                width: 100px;
+                height: 100px;
+                object-fit: cover;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Verificador de billetes serie B</h1>
+        <p class="subtitle">Desarrollada con información proporcionada por BCB</p>
+
+        <div class="instruction-text">
+            Selecciona el corte de billete a verificar
+        </div>
+
+        <div class="denomination-selector">
+            <button class="denom-btn active" data-value="10">Bs 10</button>
+            <button class="denom-btn" data-value="20">Bs 20</button>
+            <button class="denom-btn" data-value="50">Bs 50</button>
+        </div>
+
+        <div class="multiple-indicator" id="multipleIndicator">
+            📸 Modo múltiple activado
+        </div>
+
+        <div class="camera-section">
+            <div class="camera-placeholder" id="placeholder">
+                <div class="camera-icon">📷</div>
+                <button class="start-camera-btn" onclick="startCamera()">Iniciar Cámara</button>
+            </div>
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+            <button class="torch-btn" id="torchBtn" onclick="toggleTorch()" title="Encender/Apagar linterna">🔦</button>
+            <div class="scan-overlay" id="scanOverlay">
+                <div class="scan-grid"></div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="capture-btn" id="captureBtn" onclick="captureAndScan()">📸 Escanear</button>
+            <button class="stop-btn" id="stopBtn" onclick="stopCamera()">⏹️ Detener</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analizando series...</p>
+        </div>
+
+        <div class="stats-bar" id="statsBar" style="display: none;">
+            <span>Total: <strong id="totalCount">0</strong></span>
+            <span style="color: #e74c3c;">Inválidos: <strong id="invalidCount">0</strong></span>
+            <span style="color: #27ae60;">Válidos: <strong id="validCount">0</strong></span>
+        </div>
+
+        <div class="results-container" id="resultsContainer"></div>
+
+        <button class="clear-btn" id="clearBtn" onclick="clearResults()" style="display: none;">
+            🗑️ Limpiar Resultados
+        </button>
+
+        <div class="manual-input">
+            <label>✏️ Verificación Manual :</label>
+            <div class="input-group">
+                <input type="text" id="manualInput" placeholder="Ej: 77100001" maxlength="9" inputmode="numeric">
+                <button onclick="checkManual()">Verificar</button>
+            </div>
+        </div>
+
+        <!-- SECCIÓN MODIFICADA CON IMAGEN QR -->
+        <div class="bottom-section">
+            <div class="ranges-column">
+                <h3>📋 Rangos Inválidos Bs <span id="currentDenom">10</span></h3>
+                <div class="range-list" id="rangeList"></div>
+            </div>
+            
+            <div class="support-column">
+                <div class="support-title">Apoyo<br>Voluntario</div>
+                <img src="qrapoyo.jpg" alt="QR Apoyo Voluntario">
+            </div>
+        </div>
+
+        <div class="footer-brand">
+            by @IntiPixel WhatsApp+591 72211111
+        </div>
+    </div>
+
+    <div class="alert-overlay" id="alertOverlay" onclick="closeAlert()">
+        <div class="alert-box" onclick="event.stopPropagation()">
+            <div class="alert-icon">⚠️</div>
+            <h2>¡BILLETE INVÁLIDO!</h2>
+            <p>Serie B sin valor legal según BCB CP9/2026</p>
+            <div class="alert-serial" id="alertSerial"></div>
+            <p id="alertDetails" style="font-size: 0.9rem;"></p>
+            <button onclick="closeAlert()" style="margin-top: 20px; padding: 15px 30px; background: white; color: #e74c3c; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 1.1rem;">
+                Entendido
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // RANGOS EXACTOS como aparecen en la imagen
+        const invalidRanges = {
+            10: [
+                [77100001, 77550000],
+                [78000001, 78450000],
+                [78900001, 96350000],
+                [96350001, 96800000],
+                [96800001, 97250000],
+                [98150001, 98600000],
+                [100500001, 105350000],
+                [105350001, 105800000],
+                [106700001, 107150000],
+                [107600001, 108050000],
+                [108050001, 108500000],
+                [109400001, 109850000]
+            ],
+            20: [
+                [87280145, 91646549],
+                [96650001, 97100000],
+                [99800001, 100250000],
+                [100250001, 100700000],
+                [109250001, 109700000],
+                [110600001, 111050000],
+                [111050001, 111500000],
+                [111950001, 112400000],
+                [112400001, 112850000],
+                [112850001, 113300000],
+                [114200001, 114650000],
+                [114650001, 115100000],
+                [115100001, 115550000],
+                [118700001, 119150000],
+                [119150001, 119600000],
+                [120500001, 120950000]
+            ],
+            50: [
+                [67250001, 67700000],
+                [69050001, 69500000],
+                [69500001, 69950000],
+                [69950001, 70400000],
+                [70400001, 70850000],
+                [70850001, 71300000],
+                [76310012, 85139995],
+                [86400001, 86850000],
+                [90900001, 91350000],
+                [91800001, 92250000]
+            ]
+        };
+
+        let currentDenomination = 10;
+        let stream = null;
+        let isScanning = false;
+        let track = null;
+        let torchEnabled = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateRangeList();
+            
+            document.querySelectorAll('.denom-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.denom-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentDenomination = parseInt(btn.dataset.value);
+                    document.getElementById('currentDenom').textContent = currentDenomination;
+                    updateRangeList();
+                    clearResults();
+                });
+            });
+
+            const manualInput = document.getElementById('manualInput');
+            manualInput.addEventListener('input', (e) => {
+                e.target.value = e.target.value.replace(/\D/g, '');
+            });
+        });
+
+        function updateRangeList() {
+            const list = document.getElementById('rangeList');
+            const ranges = invalidRanges[currentDenomination];
+            list.innerHTML = ranges.map(r => 
+                `<div class="range-item">${r[0]} - ${r[1]}</div>`
+            ).join('');
+        }
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    } 
+                });
+                
+                track = stream.getVideoTracks()[0];
+                
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                video.style.display = 'block';
+                document.getElementById('placeholder').style.display = 'none';
+                document.getElementById('captureBtn').style.display = 'block';
+                document.getElementById('stopBtn').style.display = 'block';
+                document.getElementById('scanOverlay').style.display = 'block';
+                document.getElementById('multipleIndicator').style.display = 'block';
+                
+                const torchBtn = document.getElementById('torchBtn');
+                torchBtn.style.display = 'block';
+                
+                const capabilities = track.getCapabilities();
+                if (!capabilities.torch) {
+                    torchBtn.disabled = true;
+                    torchBtn.title = 'Linterna no disponible';
+                }
+                
+                video.play();
+            } catch (err) {
+                alert('Error al acceder a la cámara: ' + err.message);
+            }
+        }
+
+        function stopCamera() {
+            if (torchEnabled && track) {
+                toggleTorch();
+            }
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            track = null;
+            torchEnabled = false;
+            
+            document.getElementById('video').style.display = 'none';
+            document.getElementById('placeholder').style.display = 'flex';
+            document.getElementById('captureBtn').style.display = 'none';
+            document.getElementById('stopBtn').style.display = 'none';
+            document.getElementById('scanOverlay').style.display = 'none';
+            document.getElementById('multipleIndicator').style.display = 'none';
+            document.getElementById('torchBtn').style.display = 'none';
+            document.getElementById('torchBtn').classList.remove('active');
+        }
+
+        async function toggleTorch() {
+            if (!track) return;
+            
+            try {
+                const capabilities = track.getCapabilities();
+                if (!capabilities.torch) {
+                    alert('Linterna no soportada');
+                    return;
+                }
+                
+                torchEnabled = !torchEnabled;
+                await track.applyConstraints({
+                    advanced: [{ torch: torchEnabled }]
+                });
+                
+                const btn = document.getElementById('torchBtn');
+                if (torchEnabled) {
+                    btn.classList.add('active');
+                    btn.innerHTML = '💡';
+                } else {
+                    btn.classList.remove('active');
+                    btn.innerHTML = '🔦';
+                }
+            } catch (err) {
+                console.error('Error linterna:', err);
+                alert('No se pudo controlar la linterna');
+                torchEnabled = false;
+            }
+        }
+
+        async function captureAndScan() {
+            if (isScanning) return;
+            isScanning = true;
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                const result = await Tesseract.recognize(
+                    canvas,
+                    'eng',
+                    {
+                        tessedit_char_whitelist: '0123456789',
+                        logger: m => console.log(m.status, m.progress)
+                    }
+                );
+                
+                processMultipleSerials(result.data);
+                
+            } catch (err) {
+                alert('Error al escanear: ' + err.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                isScanning = false;
+            }
+        }
+
+        function processMultipleSerials(data) {
+            const text = data.text || '';
+            const lines = text.split('\n').filter(line => line.trim());
+            
+            let potentialSerials = [];
+            
+            lines.forEach(line => {
+                const numbers = extractAllNumbers(line);
+                potentialSerials.push(...numbers);
+            });
+            
+            if (data.blocks) {
+                data.blocks.forEach(block => {
+                    if (block.text) {
+                        const numbers = extractAllNumbers(block.text);
+                        potentialSerials.push(...numbers);
+                    }
+                });
+            }
+            
+            const uniqueSerials = [...new Set(potentialSerials)].filter(num => {
+                const len = num.length;
+                return len === 8 || len === 9;
+            });
+            
+            if (uniqueSerials.length === 0) {
+                showNoResults();
+                return;
+            }
+            
+            const results = uniqueSerials.map(serial => {
+                const numValue = parseInt(serial, 10);
+                return {
+                    serial: serial,
+                    length: serial.length,
+                    isInvalid: checkIfInvalid(numValue, currentDenomination),
+                    numValue: numValue
+                };
+            });
+            
+            displayResults(results);
+        }
+
+        function extractAllNumbers(text) {
+            const matches = text.match(/\d{8,9}/g) || [];
+            return matches.map(m => m.trim());
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('resultsContainer');
+            const statsBar = document.getElementById('statsBar');
+            const clearBtn = document.getElementById('clearBtn');
+            
+            container.innerHTML = '';
+            
+            let invalidCount = 0;
+            let validCount = 0;
+            let firstInvalid = null;
+            
+            results.forEach((result, index) => {
+                const div = document.createElement('div');
+                div.className = `result-item ${result.isInvalid ? 'invalid' : 'valid'}`;
+                
+                const statusClass = result.isInvalid ? 'status-invalid' : 'status-valid';
+                const statusText = result.isInvalid ? '⚠️ INVÁLIDO' : '✓ VÁLIDO';
+                
+                div.innerHTML = `
+                    <div class="result-header">
+                        <span class="result-number">${result.serial}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="result-details">
+                        Billete #${index + 1} • ${result.length} dígitos • Bs ${currentDenomination}
+                        ${result.isInvalid ? '<br><strong style="color: #e74c3c;">Rango inválido Serie B</strong>' : ''}
+                    </div>
+                `;
+                
+                container.appendChild(div);
+                
+                if (result.isInvalid) {
+                    invalidCount++;
+                    if (!firstInvalid) firstInvalid = result.serial;
+                } else {
+                    validCount++;
+                }
+            });
+            
+            document.getElementById('totalCount').textContent = results.length;
+            document.getElementById('invalidCount').textContent = invalidCount;
+            document.getElementById('validCount').textContent = validCount;
+            
+            statsBar.style.display = 'flex';
+            clearBtn.style.display = 'block';
+            
+            if (firstInvalid) {
+                playAlertSound();
+                setTimeout(() => showAlert(firstInvalid, invalidCount), 500);
+                
+                if (navigator.vibrate) {
+                    navigator.vibrate([300, 150, 300, 150, 500]);
+                }
+            }
+        }
+
+        function showNoResults() {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `
+                <div class="result-item" style="text-align: center; padding: 30px;">
+                    <div style="font-size: 3rem; margin-bottom: 10px;">🔍</div>
+                    <div style="color: #7f8c8d; font-size: 1.1rem;">
+                        No se detectaron series válidas
+                    </div>
+                    <div style="color: #95a5a6; font-size: 0.9rem; margin-top: 10px;">
+                        Usa la linterna para mejor iluminación
+                    </div>
+                </div>
+            `;
+        }
+
+        function checkManual() {
+            const input = document.getElementById('manualInput');
+            const value = input.value.trim();
+            
+            if (value.length !== 8 && value.length !== 9) {
+                alert(`Ingresa exactamente 8 o 9 dígitos.\nActual: ${value.length} dígitos`);
+                return;
+            }
+            
+            const numValue = parseInt(value, 10);
+            const isInvalid = checkIfInvalid(numValue, currentDenomination);
+            
+            const result = {
+                serial: value,
+                length: value.length,
+                isInvalid: isInvalid,
+                numValue: numValue
+            };
+            
+            displayResults([result]);
+            input.value = '';
+        }
+
+        function checkIfInvalid(number, denomination) {
+            const ranges = invalidRanges[denomination];
+            return ranges.some(range => number >= range[0] && number <= range[1]);
+        }
+
+        function playAlertSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                const playTone = (freq, duration, delay, type = 'square') => {
+                    setTimeout(() => {
+                        const osc = audioContext.createOscillator();
+                        const gain = audioContext.createGain();
+                        
+                        osc.connect(gain);
+                        gain.connect(audioContext.destination);
+                        
+                        osc.frequency.value = freq;
+                        osc.type = type;
+                        
+                        gain.gain.setValueAtTime(0.4, audioContext.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                        
+                        osc.start(audioContext.currentTime);
+                        osc.stop(audioContext.currentTime + duration);
+                    }, delay);
+                };
+                
+                playTone(880, 0.2, 0);
+                playTone(880, 0.2, 250);
+                playTone(880, 0.2, 500);
+                playTone(440, 0.6, 750, 'sawtooth');
+            } catch (e) {
+                console.log('Audio no disponible');
+            }
+        }
+
+        function showAlert(serial, count = 1) {
+            document.getElementById('alertSerial').textContent = serial;
+            const details = document.getElementById('alertDetails');
+            if (count > 1) {
+                details.textContent = `¡Se detectaron ${count} billetes inválidos! Revise todos los resultados.`;
+            } else {
+                details.textContent = `Denominación: Bs ${currentDenomination} • Serie B inválida`;
+            }
+            document.getElementById('alertOverlay').style.display = 'flex';
+        }
+
+        function closeAlert() {
+            document.getElementById('alertOverlay').style.display = 'none';
+        }
+
+        function clearResults() {
+            document.getElementById('resultsContainer').innerHTML = '';
+            document.getElementById('statsBar').style.display = 'none';
+            document.getElementById('clearBtn').style.display = 'none';
+        }
+
+        document.getElementById('manualInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') checkManual();
+        });
+    </script>
+</body>
+</html>
