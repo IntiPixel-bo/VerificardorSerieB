@@ -3,13 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ValidaSerie BCB - Verificador CP9/2026</title>
-    <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ValidaSerie BCB</title>
+    
+    <!-- Manifest para PWA -->
+    <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiVmFsaWRhU2VyaWUgQkNCIiwic2hvcnRfbmFtZSI6IlZhbGlkYVNlcmllIiwic3RhcnRfdXJsIjoiLiIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiM2NjdlZWEiLCJ0aGVtZV9jb2xvciI6IiM2NjdlZWEiLCJpY29ucyI6W3sic3JjIjoiZGF0YTppbWFnZS9zdmcreG1sLCUzQ3N2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxOTIgMTkyJyBmaWxsPScjNjY3ZWVhJyUzRSUzQ3BhdGggZD0nTTE3NiAxNkgxNmE4IDggMCAwIDAtOCA4djE0NGE4IDggMCAwIDAgOCA4aDE2MGE4IDggMCAwIDAgOC04VjI0YTggOCAwIDAgMC04LTh6TTU2IDE0NGgtMTZWMjgwaDE2em00MC00MGgtMTZ2ODBoMTZ6bTQwLTQwaC0xNnYxMjBoMTZ6bTQwIDQwaC0xNnY4MGgxNnonLyUzRSUzQy9zdmclM0UiLCJzaXplcyI6IjE5MngxOTIiLCJ0eXBlIjoiaW1hZ2Uvc3ZnK3htbCJ9XX0=">
+    
+    <!-- Tesseract.js desde CDN con fallback -->
+    <script>
+        // Precargar Tesseract para uso offline
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('data:text/javascript;base64,' + btoa(`
+                self.addEventListener('install', e => self.skipWaiting());
+                self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+                self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));
+            `)).catch(() => console.log('Service Worker no soportado'));
+        }
+    </script>
+    
+    <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+    
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
@@ -21,6 +42,7 @@
             align-items: center;
             padding: 10px;
             color: white;
+            -webkit-font-smoothing: antialiased;
         }
 
         .container {
@@ -76,6 +98,7 @@
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s;
+            -webkit-appearance: none;
         }
 
         .denom-btn.active {
@@ -136,6 +159,7 @@
             font-size: 1rem;
             cursor: pointer;
             transition: all 0.3s;
+            -webkit-appearance: none;
         }
 
         .scan-overlay {
@@ -173,7 +197,9 @@
             z-index: 10;
             display: none;
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             transition: all 0.3s;
+            -webkit-appearance: none;
         }
 
         .torch-btn.active {
@@ -205,6 +231,7 @@
             font-weight: bold;
             cursor: pointer;
             display: none;
+            -webkit-appearance: none;
         }
 
         .stop-btn {
@@ -217,6 +244,7 @@
             font-size: 1rem;
             cursor: pointer;
             display: none;
+            -webkit-appearance: none;
         }
 
         .loading {
@@ -435,9 +463,9 @@
             font-weight: bold;
             cursor: pointer;
             font-size: 1rem;
+            -webkit-appearance: none;
         }
 
-        /* NUEVO LAYOUT: Dos columnas para rangos y apoyo */
         .bottom-section {
             display: flex;
             gap: 15px;
@@ -512,6 +540,7 @@
             cursor: pointer;
             font-size: 1rem;
             font-weight: bold;
+            -webkit-appearance: none;
         }
 
         .multiple-indicator {
@@ -530,6 +559,20 @@
             font-size: 0.7rem;
             color: #95a5a6;
             letter-spacing: 1px;
+        }
+
+        .install-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin-bottom: 15px;
+            display: none;
+            width: 100%;
+            font-weight: bold;
         }
 
         @media (max-width: 480px) {
@@ -563,8 +606,12 @@
 </head>
 <body>
     <div class="container">
-        <h1>Verificador de billetes serie B</h1>
-        <p class="subtitle">Desarrollada con información proporcionada por BCB</p>
+        <h1>ValidaSerie BCB</h1>
+        <p class="subtitle">Verificador CP9/2026 - Serie B</p>
+
+        <button class="install-btn" id="installBtn" onclick="installPWA()">
+            📲 Instalar App (Usar sin internet)
+        </button>
 
         <div class="instruction-text">
             Selecciona el corte de billete a verificar
@@ -587,7 +634,7 @@
             </div>
             <video id="video" autoplay playsinline></video>
             <canvas id="canvas"></canvas>
-            <button class="torch-btn" id="torchBtn" onclick="toggleTorch()" title="Encender/Apagar linterna">🔦</button>
+            <button class="torch-btn" id="torchBtn" onclick="toggleTorch()">🔦</button>
             <div class="scan-overlay" id="scanOverlay">
                 <div class="scan-grid"></div>
             </div>
@@ -616,14 +663,13 @@
         </button>
 
         <div class="manual-input">
-            <label>✏️ Verificación Manual :</label>
+            <label>✏️ Verificación Manual (8-9 dígitos):</label>
             <div class="input-group">
                 <input type="text" id="manualInput" placeholder="Ej: 77100001" maxlength="9" inputmode="numeric">
                 <button onclick="checkManual()">Verificar</button>
             </div>
         </div>
 
-        <!-- SECCIÓN MODIFICADA CON IMAGEN QR -->
         <div class="bottom-section">
             <div class="ranges-column">
                 <h3>📋 Rangos Inválidos Bs <span id="currentDenom">10</span></h3>
@@ -637,7 +683,7 @@
         </div>
 
         <div class="footer-brand">
-            by @IntiPixel WhatsApp+591 72211111
+            by @IntiPixel
         </div>
     </div>
 
@@ -655,7 +701,7 @@
     </div>
 
     <script>
-        // RANGOS EXACTOS como aparecen en la imagen
+        // RANGOS EXACTOS
         const invalidRanges = {
             10: [
                 [77100001, 77550000],
@@ -708,6 +754,72 @@
         let isScanning = false;
         let track = null;
         let torchEnabled = false;
+        let deferredPrompt = null;
+
+        // PWA - Instalación
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('installBtn').style.display = 'block';
+        });
+
+        function installPWA() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('Usuario instaló la app');
+                    }
+                    deferredPrompt = null;
+                    document.getElementById('installBtn').style.display = 'none';
+                });
+            }
+        }
+
+        // Registrar Service Worker para offline
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                const CACHE_NAME = 'validaseries-v1';
+                const urlsToCache = [
+                    '/',
+                    'https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'
+                ];
+                
+                self.addEventListener('install', event => {
+                    event.waitUntil(
+                        caches.open(CACHE_NAME)
+                            .then(cache => cache.addAll(urlsToCache))
+                    );
+                    self.skipWaiting();
+                });
+                
+                self.addEventListener('activate', event => {
+                    event.waitUntil(self.clients.claim());
+                });
+                
+                self.addEventListener('fetch', event => {
+                    event.respondWith(
+                        caches.match(event.request)
+                            .then(response => {
+                                if (response) return response;
+                                return fetch(event.request).catch(() => {
+                                    // Fallback para imágenes
+                                    if (event.request.destination === 'image') {
+                                        return new Response();
+                                    }
+                                });
+                            })
+                    );
+                });
+            `;
+            
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            
+            navigator.serviceWorker.register(swUrl)
+                .then(() => console.log('Service Worker registrado'))
+                .catch(err => console.log('SW no registrado:', err));
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             updateRangeList();
@@ -739,15 +851,19 @@
 
         async function startCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
+                // Configuración optimizada para linterna
+                const constraints = {
+                    video: {
                         facingMode: 'environment',
                         width: { ideal: 1920 },
                         height: { ideal: 1080 }
-                    } 
-                });
+                    }
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 
-                track = stream.getVideoTracks()[0];
+                const videoTracks = stream.getVideoTracks();
+                track = videoTracks[0];
                 
                 const video = document.getElementById('video');
                 video.srcObject = stream;
@@ -758,17 +874,28 @@
                 document.getElementById('scanOverlay').style.display = 'block';
                 document.getElementById('multipleIndicator').style.display = 'block';
                 
+                // Configurar botón de linterna
                 const torchBtn = document.getElementById('torchBtn');
                 torchBtn.style.display = 'block';
                 
+                // Verificar capacidades de linterna
                 const capabilities = track.getCapabilities();
+                console.log('Capacidades:', capabilities);
+                
                 if (!capabilities.torch) {
                     torchBtn.disabled = true;
                     torchBtn.title = 'Linterna no disponible';
+                    torchBtn.style.opacity = '0.3';
+                } else {
+                    torchBtn.disabled = false;
+                    torchBtn.title = 'Encender linterna';
+                    torchBtn.style.opacity = '1';
                 }
                 
                 video.play();
+                
             } catch (err) {
+                console.error('Error cámara:', err);
                 alert('Error al acceder a la cámara: ' + err.message);
             }
         }
@@ -792,21 +919,32 @@
             document.getElementById('stopBtn').style.display = 'none';
             document.getElementById('scanOverlay').style.display = 'none';
             document.getElementById('multipleIndicator').style.display = 'none';
-            document.getElementById('torchBtn').style.display = 'none';
-            document.getElementById('torchBtn').classList.remove('active');
+            
+            const torchBtn = document.getElementById('torchBtn');
+            torchBtn.style.display = 'none';
+            torchBtn.classList.remove('active');
+            torchBtn.innerHTML = '🔦';
         }
 
         async function toggleTorch() {
-            if (!track) return;
+            if (!track) {
+                console.log('No hay track disponible');
+                return;
+            }
             
             try {
                 const capabilities = track.getCapabilities();
+                console.log('Intentando toggle, capabilities:', capabilities);
+                
                 if (!capabilities.torch) {
-                    alert('Linterna no soportada');
+                    alert('Tu dispositivo no soporta control de linterna');
                     return;
                 }
                 
+                // Alternar estado
                 torchEnabled = !torchEnabled;
+                
+                // Aplicar constraint
                 await track.applyConstraints({
                     advanced: [{ torch: torchEnabled }]
                 });
@@ -815,14 +953,23 @@
                 if (torchEnabled) {
                     btn.classList.add('active');
                     btn.innerHTML = '💡';
+                    btn.title = 'Apagar linterna';
                 } else {
                     btn.classList.remove('active');
                     btn.innerHTML = '🔦';
+                    btn.title = 'Encender linterna';
                 }
+                
+                console.log('Linterna:', torchEnabled ? 'ENCENDIDA' : 'APAGADA');
+                
             } catch (err) {
                 console.error('Error linterna:', err);
-                alert('No se pudo controlar la linterna');
+                alert('No se pudo controlar la linterna. Error: ' + err.message);
                 torchEnabled = false;
+                
+                const btn = document.getElementById('torchBtn');
+                btn.classList.remove('active');
+                btn.innerHTML = '🔦';
             }
         }
 
@@ -1065,6 +1212,4 @@
         });
     </script>
 </body>
-
 </html>
-
