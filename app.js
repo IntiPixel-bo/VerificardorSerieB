@@ -76,7 +76,7 @@ window.stopCamera = function stopCamera() {
   track = null; torchEnabled = false;
   hide($('#video')); show($('#placeholder'));
   hide($('#captureBtn')); hide($('#stopBtn')); hide($('#scanOverlay')); hide($('#multipleIndicator'));
-  const torchBtn = $('#torchBtn'); hide(torchBtn); torchBtn.classList.remove('active'); torchBtn.innerHTML = '🔦';
+  const torchBtn = $('#torchBtn'); hide(torchBtn); torchBtn.classList.remove('active'); torchBtn.textContent = '🔦';
 }
 
 window.toggleTorch = async function toggleTorch() {
@@ -87,12 +87,62 @@ window.toggleTorch = async function toggleTorch() {
     torchEnabled = !torchEnabled;
     await track.applyConstraints({ advanced: [{ torch: torchEnabled }] });
     const btn = $('#torchBtn');
-    if (torchEnabled) { btn.classList.add('active'); btn.innerHTML = '💡'; btn.title = 'Apagar linterna'; }
-    else { btn.classList.remove('active'); btn.innerHTML = '🔦'; btn.title = 'Encender linterna'; }
+    if (torchEnabled) { btn.classList.add('active'); btn.textContent = '💡'; btn.title = 'Apagar linterna'; }
+    else { btn.classList.remove('active'); btn.textContent = '🔦'; btn.title = 'Encender linterna'; }
   } catch (e) {
     alert('No se pudo controlar la linterna: ' + e.message);
-    torchEnabled = false; const btn = $('#torchBtn'); btn.classList.remove('active'); btn.innerHTML = '🔦';
+    torchEnabled = false; const btn = $('#torchBtn'); btn.classList.remove('active'); btn.textContent = '🔦';
   }
+}
+
+// --- Utilidades de color ---
+function rgbToHsv(r,g,b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h=0, s=0, v=max;
+  const d = max - min;
+  s = max === 0 ? 0 : d / max;
+  if (d !== 0) {
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h *= 60;
+  }
+  return {h, s, v};
+}
+
+function dominantHueFromCanvas(canvas) {
+  const ctx = canvas.getContext('2d');
+  const { width:w, height:h } = canvas;
+  const step = Math.max(4, Math.floor(Math.min(w,h)/120));
+  const hist = new Array(360).fill(0);
+  const img = ctx.getImageData(0,0,w,h).data;
+  for (let y=0; y<h; y+=step){
+    for (let x=0; x<w; x+=step){
+      const i = (y*w + x)*4;
+      const R=img[i], G=img[i+1], B=img[i+2];
+      const {h:H, s:S, v:V} = rgbToHsv(R,G,B);
+      const weight = Math.max(0, S)*Math.max(0.2, V);
+      if (!Number.isNaN(H)) hist[Math.floor(H)%360]+=weight;
+    }
+  }
+  let bestI=0; let bestV=-1;
+  for (let i=0;i<360;i++){ if(hist[i]>bestV){bestV=hist[i]; bestI=i;} }
+  return bestI; // 0..359
+}
+
+function inferDenominationByColor(canvas){
+  const hue = dominantHueFromCanvas(canvas);
+  // Mapeo aproximado (iluminación puede variar):
+  // 10 Bs: predominio azules (200-260)
+  // 20 Bs: naranjas/rojos claros (10-40)
+  // 50 Bs: violetas/lilas (270-315)
+  if ((hue>=200 && hue<=265)) return 10;
+  if ((hue>=10 && hue<=40) || (hue>=0 && hue<10)) return 20;
+  if ((hue>=270 && hue<=315)) return 50;
+  return null;
 }
 
 // OCR + Lógica
@@ -107,10 +157,9 @@ window.captureAndScan = async function captureAndScan() {
   try {
     const result = await Tesseract.recognize(canvas, 'eng', {
       logger: m => console.log(m.status, m.progress),
-      // Permitimos letras A/B y dígitos para detectar series
       tessedit_char_whitelist: 'AB0123456789'
     });
-    const analysis = analyzeOcr(result.data);
+    const analysis = analyzeOcr(result.data, canvas);
     displayResults(analysis);
   } catch (err) {
     alert('Error al escanear: ' + err.message);
@@ -119,62 +168,78 @@ window.captureAndScan = async function captureAndScan() {
   }
 }
 
-function analyzeOcr(data) {
-  // Extraer candidatos de denominación (10/20/50) y palabras clave
+function analyzeOcr(data, canvas) {
+  // Candidatos de denominación (10/20/50) con sesgo a la franja izquierda
   const denomCandidates = [];
-  if (data.words) {
-    for (let i = 0; i < data.words.length; i++) {
-      const w = data.words[i];
-      const txt = (w.text || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const bbox = { x: w.bbox.x0, y: w.bbox.y0, w: w.bbox.x1 - w.bbox.x0, h: w.bbox.y1 - w.bbox.y0, cx: (w.bbox.x0 + w.bbox.x1)/2, cy: (w.bbox.y0 + w.bbox.y1)/2 };
-      const h = bbox.h;
-      const conf = w.confidence || w.conf || 0;
-      const addCandidate = (val) => denomCandidates.push({ value: val, bbox, h, conf });
-      if (txt === '10' || txt === '010') addCandidate(10);
-      if (txt === '20' || txt === '020') addCandidate(20);
-      if (txt === '50' || txt === '050') addCandidate(50);
-      if (txt.includes('DIEZ')) addCandidate(10);
-      if (txt.includes('VEINTE')) addCandidate(20);
-      if (txt.includes('CINCUENTA')) addCandidate(50);
-    }
-  }
-
-  // Extraer series A/B con su bounding box (uniendo letra + número si están separados)
-  const serials = [];
   const words = (data.words || []).map(w => ({
     text: (w.text || '').toUpperCase(),
     bbox: { x: w.bbox.x0, y: w.bbox.y0, w: w.bbox.x1 - w.bbox.x0, h: w.bbox.y1 - w.bbox.y0, cx: (w.bbox.x0 + w.bbox.x1)/2, cy: (w.bbox.y0 + w.bbox.y1)/2 },
     conf: w.confidence || w.conf || 0
   }));
+  const imgW = canvas.width || 1;
+  const leftBandX = imgW * 0.35; // priorizamos lecturas a la izquierda
 
-  for (let i = 0; i < words.length; i++) {
+  const pushDenom = (val, bbox, h, conf, leftBias=false) => denomCandidates.push({ value: val, bbox, h, conf, leftBias });
+
+  for (let i=0;i<words.length;i++){
     const w = words[i];
-    const t = w.text.replace(/[^A-Z0-9]/g, '');
-    // Caso 1: todo junto A######## o B########
-    let m = t.match(/^([AB])(\d{7,9})$/);
-    if (m) {
-      serials.push({ raw: `${m[1]}${m[2]}`, series: m[1], number: parseInt(m[2], 10), bbox: w.bbox, conf: w.conf });
-      continue;
-    }
-    // Caso 2: letra sola seguida de número en la siguiente palabra
-    if ((t === 'A' || t === 'B') && i + 1 < words.length) {
-      const nTxt = words[i+1].text.replace(/[^0-9]/g, '');
-      if (nTxt.match(/^\d{7,9}$/)) {
-        const bbox = mergeBbox(w.bbox, words[i+1].bbox);
-        serials.push({ raw: `${t}${nTxt}`, series: t, number: parseInt(nTxt, 10), bbox, conf: Math.min(w.conf, words[i+1].conf) });
-        i++; // saltamos el siguiente
-        continue;
-      }
-    }
-    // Caso 3: número solo (asumimos Serie B por compatibilidad, pero lo marcamos como inferido)
-    const onlyNum = t.match(/^(\d{8,9})$/);
-    if (onlyNum) {
-      serials.push({ raw: `B${onlyNum[1]}`, series: 'B', number: parseInt(onlyNum[1], 10), bbox: w.bbox, conf: w.conf, inferredB: true });
-    }
+    const raw = (w.text||'').replace(/[^A-Za-z0-9]/g,'');
+    const txt = raw.toUpperCase();
+    const isLeft = (w.bbox.x < leftBandX);
+    if (txt==='10' || txt==='010' || txt.includes('DIEZ')) pushDenom(10, w.bbox, w.bbox.h, w.conf, isLeft);
+    if (txt==='20' || txt==='020' || txt.includes('VEINTE')) pushDenom(20, w.bbox, w.bbox.h, w.conf, isLeft);
+    if (txt==='50' || txt==='050' || txt.includes('CINCUENTA')) pushDenom(50, w.bbox, w.bbox.h, w.conf, isLeft);
   }
 
-  // Asignar denominación a cada serie por cercanía espacial
-  const results = serials.map(s => ({ ...s, denom: inferDenominationForSerial(s, denomCandidates) }));
+  // Extraer series A/B con variantes
+  const serials = [];
+  for (let i=0; i<words.length; i++){
+    const w = words[i];
+    const t = (w.text||'').replace(/[^A-Z0-9]/g,'');
+
+    // 1) A######## o B########
+    let m = t.match(/^([AB])(\d{7,9})$/);
+    if (m) { serials.push({ raw:`${m[1]}${m[2]}`, series:m[1], number:parseInt(m[2],10), bbox:w.bbox, conf:w.conf }); continue; }
+
+    // 2) ########A o ########B (letra a la derecha)
+    m = t.match(/^(\d{7,9})([AB])$/);
+    if (m) { serials.push({ raw:`${m[2]}${m[1]}`, series:m[2], number:parseInt(m[1],10), bbox:w.bbox, conf:w.conf }); continue; }
+
+    // 3) 'A' o 'B' seguido de número en la palabra siguiente
+    if ((t==='A' || t==='B') && i+1<words.length){
+      const nTxt = (words[i+1].text||'').replace(/[^0-9]/g,'');
+      if (/^\d{7,9}$/.test(nTxt)){
+        const bbox = mergeBbox(w.bbox, words[i+1].bbox);
+        serials.push({ raw:`${t}${nTxt}`, series:t, number:parseInt(nTxt,10), bbox, conf:Math.min(w.conf, words[i+1].conf) });
+        i++; continue;
+      }
+    }
+
+    // 4) Número seguido por 'A' o 'B' en la palabra siguiente
+    const nOnly = t.match(/^(\d{7,9})$/);
+    if (nOnly && i+1<words.length){
+      const nextT = (words[i+1].text||'').replace(/[^A-Z]/g,'').toUpperCase();
+      if (nextT==='A' || nextT==='B'){
+        const bbox = mergeBbox(w.bbox, words[i+1].bbox);
+        serials.push({ raw:`${nextT}${nOnly[1]}`, series:nextT, number:parseInt(nOnly[1],10), bbox, conf:Math.min(w.conf, words[i+1].conf) });
+        i++; continue;
+      }
+    }
+
+    // 5) Número solo ⇒ asumimos B (compat), marcado como inferido
+    if (nOnly){ serials.push({ raw:`B${nOnly[1]}`, series:'B', number:parseInt(nOnly[1],10), bbox:w.bbox, conf:w.conf, inferredB:true }); }
+  }
+
+  // Si tenemos candidatos en la franja izquierda, nos quedamos con esos para darles prioridad
+  const leftCandidates = denomCandidates.filter(d => d.leftBias);
+  const usedCandidates = leftCandidates.length ? leftCandidates : denomCandidates;
+
+  // Asignar denominación a cada serie por cercanía y, si falta, por color dominante
+  const colorDenom = inferDenominationByColor(canvas);
+  const results = serials.map(s => {
+    const d = inferDenominationForSerial(s, usedCandidates);
+    return { ...s, denom: d || colorDenom || null };
+  });
 
   // Determinar validez
   results.forEach(r => {
@@ -187,14 +252,13 @@ function analyzeOcr(data) {
         r.status = r.isInvalidRange ? 'invalid' : 'valid';
         r.reason = r.isInvalidRange ? 'En rango inhabilitado de Serie B' : 'Fuera de rangos inhabilitados';
       } else {
-        // Si no pudimos identificar corte, marcamos como pendiente
         r.status = 'unknown';
         r.reason = 'Corte no identificado';
       }
     }
   });
 
-  return { serials: results, denomCandidates };
+  return { serials: results, denomCandidates: usedCandidates, colorDenom };
 }
 
 function mergeBbox(a, b) {
@@ -205,14 +269,15 @@ function mergeBbox(a, b) {
 
 function inferDenominationForSerial(serial, denomCandidates) {
   if (!denomCandidates.length) return null;
-  // Peso por distancia + tamaño de palabra (mayor h es mejor)
   let best = null, bestScore = Infinity;
   denomCandidates.forEach(dc => {
     const dx = (serial.bbox.cx - dc.bbox.cx);
     const dy = (serial.bbox.cy - dc.bbox.cy);
     const dist2 = dx*dx + dy*dy;
-    const sizeBonus = Math.max(1, dc.h); // mayor tamaño => menor score efectivo
-    const score = dist2 / (sizeBonus * sizeBonus);
+    // Bonificación si el candidato está en la franja izquierda (donde el corte grande suele estar)
+    const leftBonus = dc.leftBias ? 0.4 : 1.0;
+    const sizeBonus = Math.max(1, dc.h);
+    const score = (dist2 / (sizeBonus*sizeBonus)) * leftBonus;
     if (score < bestScore) { bestScore = score; best = dc; }
   });
   return best ? best.value : null;
@@ -266,7 +331,7 @@ function displayResults(analysis) {
 
   let invalidCount = 0; let validCount = 0; let firstInvalid = null;
 
-  serials.forEach((r, i) => {
+  serials.forEach((r) => {
     const stateClass = r.status === 'invalid' ? 'invalid' : (r.status === 'valid' ? 'valid' : '');
     if (r.status === 'invalid') { invalidCount++; if (!firstInvalid) firstInvalid = r; }
     else if (r.status === 'valid') { validCount++; }
@@ -299,26 +364,25 @@ function displayResults(analysis) {
   }
 }
 
-// --- Verificación manual ---
+// --- Verificación manual (con selección OBLIGATORIA de corte) ---
 window.checkManual = function checkManual() {
   const input = $('#manualInput');
+  const denomSel = $('#manualDenom');
+  if (!denomSel || !denomSel.value) { alert('Selecciona el corte del billete (Bs 10, 20 o 50) para validar manualmente.'); return; }
+  const denom = parseInt(denomSel.value, 10);
+
   const value = (input.value || '').trim().toUpperCase();
   const m = value.replace(/\s+/g, '').match(/^([AB])?\s*(\d{8,9})$/);
   if (!m) { alert('Formato inválido. Ejemplos válidos: A77100001, B77100001, 77100001'); return; }
   const series = m[1] || 'B'; // si no se especifica, asumimos B por compatibilidad
   const number = parseInt(m[2], 10);
-  // Intento de detectar denominación desde selector auxiliar (opcional)
-  const denomSel = $('#manualDenom');
-  const denom = denomSel && denomSel.value ? parseInt(denomSel.value, 10) : null;
 
   let status = 'unknown', reason = '';
   if (series === 'A') { status = 'valid'; reason = 'Serie A (válida por regla)'; }
-  else if (denom) {
+  else {
     const invalid = checkIfInvalid(number, denom);
     status = invalid ? 'invalid' : 'valid';
     reason = invalid ? 'En rango inhabilitado de Serie B' : 'Fuera de rangos inhabilitados';
-  } else {
-    reason = 'Corte no identificado';
   }
 
   displayResults({ serials: [{ raw: series + String(number).padStart(m[2].length, '0'), series, number, denom, status, reason }] });
